@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111">
+<title>For you</title>
+<link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: 'Pacifico', cursive;
+    -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #111;
+    transform: scaleX(-1); will-change: transform; }
+  video.back { transform: none; }
+  #tint { position: fixed; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(255,120,160,0) 42%, rgba(120,20,60,.3) 100%); }
+  #start {
+    position: fixed; inset: 0; display: flex; flex-direction: column; gap: 18px; z-index: 5;
+    align-items: center; justify-content: center; text-align: center; padding: 24px;
+    background: radial-gradient(circle at 30% 20%, #ffe9a8, transparent 55%), linear-gradient(160deg, #ffc2d4, #ffe3b8);
+    color: #c2185b; transition: opacity .55s ease; overflow: hidden;
+  }
+  #start.hide { opacity: 0; pointer-events: none; }
+  #start h1 { font-size: clamp(38px, 11vw, 68px); margin: 0; font-weight: 400; text-shadow: 0 2px 0 rgba(255,255,255,.6); }
+  #start p { font-family: system-ui, sans-serif; color: #7a4a5a; margin: 0; max-width: 330px; line-height: 1.55; }
+  #start .tip { font-size: 13px; opacity: .75; }
+  button.main { font-family: 'Pacifico', cursive; font-size: 24px; padding: 14px 40px; border: 0;
+    border-radius: 999px; background: linear-gradient(135deg, #ff5c8a, #e91e63); color: #fff;
+    box-shadow: 0 8px 22px rgba(233,30,99,.45); }
+  button.main { animation: pulse 2.4s ease-in-out infinite; }
+  button.main:active { animation: none; transform: scale(.97); }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+  .fl { position: absolute; font-size: 30px; opacity: .85; pointer-events: none; animation: drift 5s ease-in-out infinite; }
+  @keyframes drift { 0%, 100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-16px) rotate(8deg); } }
+  #status { position: fixed; bottom: calc(env(safe-area-inset-bottom) + 92px); left: 50%; transform: translateX(-50%);
+    color: #fff; font-family: system-ui, sans-serif; font-size: 12.5px; padding: 6px 14px; border-radius: 999px;
+    background: rgba(20,20,30,.5); white-space: nowrap; pointer-events: none; letter-spacing: .1px;
+    opacity: 0; transition: opacity .4s ease; }
+  #status.on { opacity: 1; }
+  .btn { position: fixed; bottom: calc(env(safe-area-inset-bottom) + 22px); width: 54px; height: 54px; border-radius: 50%;
+    border: 0; background: rgba(255,255,255,.22); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font-size: 24px; color: #fff; display: flex; align-items: center; justify-content: center; z-index: 3;
+    opacity: 0; pointer-events: none; transform: scale(.85); transition: opacity .45s ease, transform .25s ease; }
+  .btn.show { opacity: 1; pointer-events: auto; transform: scale(1); }
+  .btn.show:active { transform: scale(.92); }
+  #flip { left: 22px; } #shot { right: 22px; } #replay { left: 50%; margin-left: -27px; }
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .35s; z-index: 4; }
+</style>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<div id="tint"></div>
+<canvas id="c"></canvas>
+<div id="flash"></div>
+<div id="status"></div>
+<button class="btn" id="flip" aria-label="Flip camera">🔄</button>
+<button class="btn" id="replay" aria-label="Show message">💌</button>
+<button class="btn" id="shot" aria-label="Save photo">📸</button>
+<div id="start">
+  <span class="fl" style="left:10%;top:14%">🌸</span><span class="fl" style="right:12%;top:20%;animation-delay:-1.2s">🦋</span><span class="fl" style="left:16%;bottom:16%;animation-delay:-2.4s">🌼</span><span class="fl" style="right:14%;bottom:12%;animation-delay:-3.4s">🌺</span>
+  <h1 id="startTitle"></h1>
+  <p>Allow the camera. <b>Point</b> your finger to plant flowers around your head, <b>open your hand</b> to scatter them, and make a <b>heart</b> with your hands for a surprise.</p>
+  <button class="main" id="go">Start</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js" crossorigin="anonymous"></script>
+<script>
+// =============== EDIT THESE ===============
+const CONFIG = {
+  title: "For Richa",
+  subtitle: "this one is just for you",
+  startTitle: "Hey Richa",
+  // Message shown when she makes a heart. One entry per line.
+  heartMessage: [
+    "i love you riuuu soo muchh,",
+    "life is better with you in it,",
+    "my pyara bachuu,",
+    "may all your dreams come true baby,",
+    "Jesus is with u always my shona,",
+    "God bless you my love with loads of happiness,",
+    "success and may you prosper in everything you do,",
+    "i am always here for you my babuli!!!"],
+  messageSeconds: 17,
+  holdMs: 450,             // how long she has to hold the heart (milliseconds)
+  forgiveness: 1.0,        // 1.3 = heart easier to trigger, 0.8 = stricter
+  maxHands: 4,             // 2 = one person. Set 4 if two people use it together (more false hands possible)
+  followHead: false,       // false = flowers planted near the head stay where they are (don't follow her head)
+  fingerHeart: false,      // false = heart needs BOTH hands (one-hand finger heart off)
+  scatterHoldMs: 180,      // how long an open hand must be held to blow the flowers away
+  handModel: 1,            // 1 = accurate (default; drops to 0 by itself if the device is too slow), 0 = fastest
+  maxPlanted: 700,         // how many flowers can stay planted at once
+  maxParticles: 400,
+};
+// ==========================================
+// Tip: add ?debug to the web address to see live numbers.
+
+const DEBUG = /debug/.test(location.search);
+const DEFAULT_HINT = 'Point to plant · Open your hand to scatter';
+document.getElementById('startTitle').textContent = CONFIG.startTitle;
+const video = document.getElementById('video');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const say = t => { if (statusEl.textContent !== t) statusEl.textContent = t; statusEl.classList.add('on'); };
+let W = 0, H = 0, DPR = 1, vw = 640, vh = 480, mirrored = true, facing = 'user', vignette = null;
+
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 1.5);
+  W = innerWidth; H = innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingQuality = 'high';
+  buildVignette();
+}
+// the soft warm edge is drawn once and reused (used for photos)
+function buildVignette() {
+  const c = document.createElement('canvas'); c.width = Math.ceil(W); c.height = Math.ceil(H);
+  const g = c.getContext('2d'), gr = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+  gr.addColorStop(0, 'rgba(255,120,160,0)'); gr.addColorStop(1, 'rgba(120,20,60,.3)'); g.fillStyle = gr; g.fillRect(0, 0, c.width, c.height);
+  vignette = c;
+}
+addEventListener('resize', resize); resize();
+
+const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const coverScale = () => Math.max(W / vw, H / vh);
+
+function toScreen(p) {
+  const s = coverScale(), dw = vw * s, dh = vh * s;
+  const x = (W - dw) / 2 + p.x * dw;
+  return { x: mirrored ? W - x : x, y: (H - dh) / 2 + p.y * dh };
+}
+
+// =============== The heart shape ===============
+function heartPt(t) {
+  const a = t * Math.PI * 2;
+  const x = 16 * Math.pow(Math.sin(a), 3);
+  const y = -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
+  return { x: x / 32, y: (y - 2.5) / 32 };
+}
+const HEART = new Path2D();
+for (let i = 0; i <= 120; i++) { const p = heartPt(i / 120); if (i) HEART.lineTo(p.x, p.y); else HEART.moveTo(p.x, p.y); }
+HEART.closePath();
+
+// ===== Realistic procedural flower sprites =====
+// Each flower is painted once into its own small canvas (petal gradients, veins, soft shadow, textured centres),
+// then reused everywhere. Deterministic: the same seed always gives the same flower.
+const FS = 144;                                   // sprite size in pixels
+function rngOf(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const hsl = (h, s, l, a = 1) => `hsla(${((h % 360) + 360) % 360},${s}%,${l}%,${a})`;
+
+// ---- petal outlines (pointing up, base at origin) ----
+function pPoint(g, L, w) { g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(w, -L * 0.16, w * 0.86, -L * 0.8, 0, -L); g.bezierCurveTo(-w * 0.86, -L * 0.8, -w, -L * 0.16, 0, 0); g.closePath(); }
+function pRound(g, L, w) { g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(w * 1.35, -L * 0.04, w * 1.2, -L * 1.06, 0, -L); g.bezierCurveTo(-w * 1.2, -L * 1.06, -w * 1.35, -L * 0.04, 0, 0); g.closePath(); }
+function pNotch(g, L, w) { g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(w * 1.5, -L * 0.1, w * 1.35, -L * 1.0, w * 0.2, -L); g.lineTo(0, -L * 0.87); g.lineTo(-w * 0.2, -L); g.bezierCurveTo(-w * 1.35, -L * 1.0, -w * 1.5, -L * 0.1, 0, 0); g.closePath(); }
+function pFringe(g, L, w) { g.beginPath(); g.moveTo(0, 0); g.lineTo(w * 0.8, -L * 0.62); g.lineTo(w * 1.1, -L * 0.98); g.lineTo(w * 0.4, -L * 0.82); g.lineTo(0, -L); g.lineTo(-w * 0.4, -L * 0.82); g.lineTo(-w * 1.1, -L * 0.98); g.lineTo(-w * 0.8, -L * 0.62); g.closePath(); }
+function pTwist(g, L, w) { g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(w * 1.7, -L * 0.08, w * 1.5, -L * 0.95, w * 0.25, -L); g.bezierCurveTo(-w * 0.6, -L * 0.72, -w * 0.5, -L * 0.2, 0, 0); g.closePath(); }
+
+// paint one petal: gradient base->tip, centre vein, soft edge line
+function petal(g, shape, L, w, base, mid, tip, o = {}) {
+  shape(g, L, w);
+  const gr = g.createLinearGradient(0, 0, 0, -L);
+  gr.addColorStop(0, base); gr.addColorStop(o.midAt || 0.5, mid); gr.addColorStop(1, tip);
+  g.fillStyle = gr; g.fill();
+  g.save(); g.clip();
+  const sh = g.createLinearGradient(-w, 0, w, 0);            // slight left-light / right-dark fold
+  sh.addColorStop(0, 'rgba(255,255,255,.14)'); sh.addColorStop(0.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.13)');
+  g.fillStyle = sh; g.fillRect(-w * 2, -L * 1.1, w * 4, L * 1.2);
+  if (o.vein !== false) {
+    g.strokeStyle = o.veinCol || 'rgba(0,0,0,.14)'; g.lineWidth = Math.max(0.6, L * 0.022);
+    g.beginPath(); g.moveTo(0, -L * 0.05); g.lineTo(0, -L * 0.82); g.stroke();
+    if (o.veins) { g.lineWidth = Math.max(0.5, L * 0.012); for (const k of [-1, 1]) for (const t of [0.3, 0.5, 0.68]) { g.beginPath(); g.moveTo(0, -L * t); g.lineTo(k * w * 0.62, -L * (t + 0.14)); g.stroke(); } }
+  }
+  g.restore();
+  shape(g, L, w); g.strokeStyle = o.edge || 'rgba(0,0,0,.2)'; g.lineWidth = Math.max(0.7, L * 0.018); g.stroke();
+}
+function ring(g, n, off, fn) { for (let i = 0; i < n; i++) { g.save(); g.rotate(off + i * TAU / n); fn(i); g.restore(); } }
+function dots(g, rng, cx, cy, rad, n, col, size, kind) {         // seed/pollen texture (golden-angle spiral)
+  for (let k = 1; k < n; k++) { const r = rad * Math.sqrt(k / n), a = k * 2.39996323; g.fillStyle = typeof col === 'function' ? col(k, r) : col; g.beginPath(); g.arc(cx + Math.cos(a) * r, cy + Math.sin(a) * r, size * (0.8 + rng() * 0.5), 0, TAU); g.fill(); }
+}
+function disc(g, r, c0, c1, edge) { const gr = g.createRadialGradient(-r * 0.25, -r * 0.3, r * 0.1, 0, 0, r); gr.addColorStop(0, c0); gr.addColorStop(1, c1); g.fillStyle = gr; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill(); if (edge) { g.strokeStyle = edge; g.lineWidth = r * 0.1; g.stroke(); } }
+
+// ---- species ----
+const SPECIES = {
+  sunflower(g, R, rng, p) {
+    ring(g, 22, rng(), i => petal(g, pPoint, R * (0.98 - rng() * 0.05), R * 0.125, p.a, p.b, p.c, { veins: false }));
+    ring(g, 20, 0.15, i => petal(g, pPoint, R * (0.86 - rng() * 0.05), R * 0.12, p.a, p.b, p.c, { veins: false }));
+    disc(g, R * 0.37, '#7a4416', '#2a1305', 'rgba(255,200,80,.55)');
+    dots(g, rng, 0, 0, R * 0.34, 110, (k, r) => k % 3 ? 'rgba(255,205,110,.34)' : 'rgba(10,4,0,.5)', R * 0.017);
+  },
+  daisy(g, R, rng, p) {
+    ring(g, 18, rng(), i => petal(g, pPoint, R * (0.98 - rng() * 0.06), R * 0.09, p.a, p.b, p.c));
+    ring(g, 17, 0.2, i => petal(g, pPoint, R * (0.86 - rng() * 0.05), R * 0.085, p.a, p.b, p.c));
+    disc(g, R * 0.25, '#ffd21f', '#d98a00', 'rgba(150,80,0,.35)');
+    dots(g, rng, 0, 0, R * 0.22, 60, 'rgba(120,60,0,.4)', R * 0.016);
+  },
+  gerbera(g, R, rng, p) {
+    ring(g, 28, rng(), i => petal(g, pPoint, R * (0.99 - rng() * 0.05), R * 0.082, p.a, p.b, p.c));
+    ring(g, 22, 0.1, i => petal(g, pPoint, R * (0.8 - rng() * 0.04), R * 0.08, p.a, p.b, p.c));
+    ring(g, 15, 0.3, i => petal(g, pPoint, R * (0.6 - rng() * 0.03), R * 0.08, p.b, p.b, p.c));
+    disc(g, R * 0.2, p.d || '#40200a', '#1a0a02', 'rgba(255,215,90,.8)');
+    dots(g, rng, 0, 0, R * 0.17, 40, 'rgba(255,225,120,.5)', R * 0.014);
+  },
+  cornflower(g, R, rng, p) {
+    ring(g, 15, rng(), i => petal(g, pFringe, R * (0.98 - rng() * 0.05), R * 0.11, p.a, p.b, p.c, { vein: false }));
+    ring(g, 12, 0.25, i => petal(g, pFringe, R * (0.74 - rng() * 0.04), R * 0.1, p.a, p.b, p.c, { vein: false }));
+    ring(g, 9, 0.5, i => petal(g, pFringe, R * 0.5, R * 0.085, p.b, p.c, p.c, { vein: false }));
+    disc(g, R * 0.12, '#3a1a6a', '#1d0a40');
+    dots(g, rng, 0, 0, R * 0.1, 18, 'rgba(230,200,255,.55)', R * 0.012);
+  },
+  aster(g, R, rng, p) {
+    ring(g, 36, rng(), i => petal(g, pPoint, R * (0.99 - rng() * 0.06), R * 0.05, p.a, p.b, p.c, { vein: false }));
+    ring(g, 30, 0.1, i => petal(g, pPoint, R * (0.82 - rng() * 0.05), R * 0.05, p.a, p.b, p.c, { vein: false }));
+    disc(g, R * 0.19, '#ffd21f', '#e08a00', 'rgba(130,60,0,.4)');
+    dots(g, rng, 0, 0, R * 0.17, 40, 'rgba(120,50,0,.4)', R * 0.013);
+  },
+  rose(g, R, rng, p) {
+    const rings = [[7, 1.0, 0.36], [6, 0.8, 0.34], [5, 0.62, 0.32], [4, 0.46, 0.3], [3, 0.31, 0.28]];
+    rings.forEach(([n, s, w], r) => ring(g, n, rng() * TAU, i => petal(g, pRound, R * s, R * w * s * 1.2, r === 0 ? p.a : p.b, p.b, p.c, { vein: false, edge: 'rgba(60,0,20,.34)' })));
+    g.strokeStyle = 'rgba(70,0,25,.45)'; g.lineWidth = R * 0.028; g.beginPath();
+    for (let t = 0; t < 9; t += 0.2) { const rr = R * 0.04 * t, a = t * 1.1; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } g.stroke();
+  },
+  ranunculus(g, R, rng, p) {
+    for (let r = 0; r < 8; r++) { const s = 1 - r * 0.115; ring(g, 9 - Math.floor(r / 2), rng() * TAU, i => petal(g, pRound, R * s, R * 0.19 * s * 1.5, p.a, p.b, r > 5 ? p.a : p.c, { vein: false, edge: 'rgba(80,20,0,.32)' })); }
+    g.strokeStyle = 'rgba(90,20,0,.4)'; g.lineWidth = R * 0.03; g.beginPath(); for (let t = 0; t < 8; t += 0.2) { const rr = R * 0.035 * t, a = t * 1.3; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } g.stroke();
+  },
+  lily(g, R, rng, p) {
+    ring(g, 3, 0.52, i => petal(g, pPoint, R * 0.96, R * 0.2, p.a, p.b, p.c, { veins: true, veinCol: p.v }));
+    ring(g, 3, 0, i => petal(g, pPoint, R * 1.0, R * 0.26, p.a, p.b, p.c, { veins: true, veinCol: p.v }));
+    ring(g, 3, 0, i => { g.fillStyle = p.s || 'rgba(120,10,70,.55)'; for (let k = 0; k < 9; k++) { g.beginPath(); g.arc((rng() - 0.5) * R * 0.16, -R * (0.18 + rng() * 0.38), R * (0.014 + rng() * 0.014), 0, TAU); g.fill(); } });
+    g.lineCap = 'round'; ring(g, 6, 0.2, i => { g.strokeStyle = 'rgba(240,240,200,.95)'; g.lineWidth = R * 0.022; g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -R * 0.5); g.stroke(); g.fillStyle = '#c0561a'; g.beginPath(); g.ellipse(0, -R * 0.52, R * 0.028, R * 0.07, 0, 0, TAU); g.fill(); });
+    disc(g, R * 0.06, '#9bd36a', '#4f8a2a');
+  },
+  pansy(g, R, rng, p) {
+    const pet = (ang, L, w, a, b, c) => { g.save(); g.rotate(ang); petal(g, pRound, L, w, a, b, c, { vein: false, edge: 'rgba(30,0,50,.35)' }); g.restore(); };
+    pet(-0.55, R * 0.86, R * 0.3, p.a, p.b, p.c); pet(0.55, R * 0.86, R * 0.3, p.a, p.b, p.c);
+    pet(-1.45, R * 0.78, R * 0.3, p.b, p.b, p.c); pet(1.45, R * 0.78, R * 0.3, p.b, p.b, p.c);
+    pet(Math.PI, R * 0.92, R * 0.34, p.a, p.b, p.d || p.c);
+    g.save(); g.globalCompositeOperation = 'source-atop';
+    ring(g, 5, -0.55, i => { const gr = g.createRadialGradient(0, -R * 0.15, 1, 0, -R * 0.15, R * 0.34); gr.addColorStop(0, 'rgba(25,0,45,.85)'); gr.addColorStop(1, 'rgba(25,0,45,0)'); g.fillStyle = gr; g.fillRect(-R * 0.4, -R * 0.55, R * 0.8, R * 0.7); });
+    g.restore();
+    g.strokeStyle = 'rgba(25,0,45,.6)'; g.lineWidth = R * 0.016; ring(g, 11, 0.1, i => { g.beginPath(); g.moveTo(0, -R * 0.1); g.lineTo(0, -R * 0.36); g.stroke(); });
+    disc(g, R * 0.09, '#ffe35a', '#e0a000');
+  },
+  blossom(g, R, rng, p) {
+    ring(g, 5, rng(), i => petal(g, pNotch, R * 0.98, R * 0.27, p.a, p.b, p.c, { vein: false, edge: 'rgba(120,20,60,.28)' }));
+    g.strokeStyle = 'rgba(160,20,70,.45)'; g.lineWidth = R * 0.02; ring(g, 5, 0, i => { g.beginPath(); g.moveTo(0, -R * 0.04); g.lineTo(0, -R * 0.38); g.stroke(); });
+    g.lineCap = 'round'; ring(g, 12, 0.1, i => { const L = R * (0.3 + rng() * 0.15); g.strokeStyle = 'rgba(255,235,240,.9)'; g.lineWidth = R * 0.016; g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -L); g.stroke(); g.fillStyle = '#e8a020'; g.beginPath(); g.arc(0, -L, R * 0.03, 0, TAU); g.fill(); });
+    disc(g, R * 0.07, '#d4e58a', '#8aa63a');
+  },
+  poppy(g, R, rng, p) {
+    ring(g, 4, 0.78, i => petal(g, pRound, R * 0.96, R * 0.5, p.a, p.b, p.c, { vein: false, veins: false, edge: 'rgba(80,0,0,.32)' }));
+    g.save(); g.globalCompositeOperation = 'source-atop'; const gr = g.createRadialGradient(0, 0, 1, 0, 0, R * 0.42); gr.addColorStop(0, 'rgba(15,0,10,.9)'); gr.addColorStop(1, 'rgba(15,0,10,0)'); g.fillStyle = gr; g.fillRect(-R, -R, R * 2, R * 2); g.restore();
+    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = R * 0.012; ring(g, 28, 0, i => { g.beginPath(); g.moveTo(0, -R * 0.2); g.lineTo(0, -R * 0.9); g.stroke(); });
+    disc(g, R * 0.1, '#8aa84a', '#4a6a20'); dots(g, rng, 0, 0, R * 0.2, 36, 'rgba(10,0,10,.85)', R * 0.016);
+  },
+  plumeria(g, R, rng, p) {
+    ring(g, 5, rng(), i => petal(g, pTwist, R * 0.98, R * 0.3, p.a, p.b, p.c, { vein: false, edge: p.e || 'rgba(190,60,90,.4)' }));
+    const gr = g.createRadialGradient(0, 0, 1, 0, 0, R * 0.42); gr.addColorStop(0, 'rgba(255,205,40,.95)'); gr.addColorStop(1, 'rgba(255,205,40,0)'); g.save(); g.globalCompositeOperation = 'source-atop'; g.fillStyle = gr; g.fillRect(-R, -R, R * 2, R * 2); g.restore();
+  },
+  dahlia(g, R, rng, p) {
+    [[24, 1, .1], [20, .8, .105], [16, .6, .115], [12, .42, .13], [8, .26, .15]].forEach(([n, s, w], r) => ring(g, n, rng() * TAU, i => petal(g, pPoint, R * s, R * w * 1.35, r % 2 ? p.b : p.a, p.b, p.c, { vein: true })));
+    disc(g, R * 0.05, p.b, p.a);
+  },
+  forgetmenot(g, R, rng, p) {
+    ring(g, 5, rng(), i => { g.translate(0, 0); petal(g, pRound, R * 0.95, R * 0.34, p.a, p.b, p.c, { vein: false, edge: 'rgba(10,30,110,.3)' }); });
+    disc(g, R * 0.2, '#fff6b0', '#ffc928', 'rgba(255,255,255,.9)');
+  },
+  leaf(g, R, rng, p) {
+    const lf = (ang, L, w) => { g.save(); g.rotate(ang); g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(w * 1.1, -L * 0.2, w * 1.0, -L * 0.8, 0, -L); g.bezierCurveTo(-w * 1.0, -L * 0.8, -w * 1.1, -L * 0.2, 0, 0); g.closePath();
+      const gr = g.createLinearGradient(0, 0, 0, -L); gr.addColorStop(0, p.a); gr.addColorStop(1, p.c); g.fillStyle = gr; g.fill();
+      g.save(); g.clip(); const sh = g.createLinearGradient(-w, 0, w, 0); sh.addColorStop(0, 'rgba(255,255,255,.2)'); sh.addColorStop(1, 'rgba(0,30,0,.25)'); g.fillStyle = sh; g.fillRect(-w * 2, -L, w * 4, L); g.strokeStyle = 'rgba(0,50,10,.4)'; g.lineWidth = L * 0.022;
+      g.beginPath(); g.moveTo(0, -L * 0.04); g.lineTo(0, -L * 0.88); g.stroke(); g.lineWidth = L * 0.012; for (const k of [-1, 1]) for (const t of [0.22, 0.38, 0.54, 0.7]) { g.beginPath(); g.moveTo(0, -L * t); g.lineTo(k * w * 0.8, -L * (t + 0.15)); g.stroke(); } g.restore();
+      g.strokeStyle = 'rgba(0,50,10,.4)'; g.lineWidth = L * 0.02; g.stroke(); g.restore(); };
+    const n = 3 + ((rng() * 2) | 0), base = rng() * TAU;
+    for (let i = 0; i < n; i++) lf(base + i * TAU / n + (rng() - 0.5) * 0.3, R * (0.9 + rng() * 0.1), R * 0.34);
+  },
+};
+
+// ---- palettes (a = base, b = middle, c = tip) ----
+const PAL = {
+  sunflower: [{ a: '#e8a000', b: '#ffc81c', c: '#ffe45a' }, { a: '#e07a00', b: '#ff9a14', c: '#ffcf3a' }, { a: '#c24a10', b: '#e8761c', c: '#ffb23a' }],
+  daisy: [{ a: '#f4e08a', b: '#ffffff', c: '#ffffff' }, { a: '#f6d2e2', b: '#ffeaf3', c: '#ffffff' }, { a: '#cfe0ff', b: '#eaf1ff', c: '#ffffff' }, { a: '#f8c9d6', b: '#ff9fbb', c: '#ffe0ea' }],
+  gerbera: [{ a: '#b81d0e', b: '#ee3a22', c: '#ff7a4a', d: '#2a1006' }, { a: '#d65a00', b: '#ff8a14', c: '#ffc04a', d: '#3a1c08' }, { a: '#c2185b', b: '#ee4a8c', c: '#ff9ac0', d: '#3a1020' }, { a: '#d9a000', b: '#ffcf1c', c: '#fff08a', d: '#3a2208' }, { a: '#9a1a6a', b: '#d33a98', c: '#ff8fd0', d: '#2a0a20' }],
+  cornflower: [{ a: '#1f3fd0', b: '#3f6bff', c: '#8fb0ff' }, { a: '#5a2ab8', b: '#8a5cff', c: '#c0a0ff' }, { a: '#b02a8a', b: '#e04ab8', c: '#ff9ae0' }],
+  aster: [{ a: '#6a2ab8', b: '#9a5cf0', c: '#d0aaff' }, { a: '#c04a9a', b: '#ee80cc', c: '#ffc0ec' }, { a: '#3a5ad0', b: '#6a8cff', c: '#b8caff' }, { a: '#d0d8f0', b: '#f4f6ff', c: '#ffffff' }],
+  rose: [{ a: '#e86a8a', b: '#ff9ab4', c: '#ffd0dc' }, { a: '#b01030', b: '#e02848', c: '#ff7090' }, { a: '#f09070', b: '#ffb898', c: '#ffe4d0' }, { a: '#d84ab8', b: '#f088d8', c: '#ffc8f0' }],
+  ranunculus: [{ a: '#e86a10', b: '#ff9a2a', c: '#ffd070' }, { a: '#d83a6a', b: '#ff7098', c: '#ffc0d4' }, { a: '#e0b020', b: '#ffd84a', c: '#fff0a0' }],
+  lily: [{ a: '#ffffff', b: '#fff0f6', c: '#ffc0d8', v: 'rgba(200,40,110,.35)' }, { a: '#ffd0e0', b: '#ff90b8', c: '#ff5a96', v: 'rgba(160,0,70,.3)' }, { a: '#ffe8a0', b: '#ffcf50', c: '#ff9a20', v: 'rgba(160,70,0,.3)', s: 'rgba(120,40,0,.55)' }],
+  pansy: [{ a: '#3a1a8a', b: '#6a3ad8', c: '#9a7cff', d: '#fff0a0' }, { a: '#7a1a6a', b: '#b83aa0', c: '#e898d8', d: '#ffe070' }, { a: '#c07000', b: '#ffa81c', c: '#ffe070', d: '#fff4b0' }, { a: '#1a3aa0', b: '#3a6af0', c: '#8ab0ff', d: '#ffffff' }],
+  blossom: [{ a: '#e8508a', b: '#ff98bc', c: '#fff0f5' }, { a: '#ffb0cc', b: '#ffe0ec', c: '#ffffff' }, { a: '#c84aa8', b: '#f090d8', c: '#ffe0f6' }],
+  poppy: [{ a: '#a00a0a', b: '#e82020', c: '#ff6a40' }, { a: '#d84a00', b: '#ff7a14', c: '#ffb050' }, { a: '#c0407a', b: '#f070b0', c: '#ffc0e0' }],
+  plumeria: [{ a: '#ffe14a', b: '#fff6d8', c: '#ffffff', e: 'rgba(230,100,140,.55)' }, { a: '#ffd23a', b: '#ffb0c8', c: '#ff7aa8', e: 'rgba(190,40,100,.45)' }],
+  dahlia: [{ a: '#8a1a8a', b: '#c850c8', c: '#f0a8f0' }, { a: '#c01858', b: '#ee4a88', c: '#ffa0c4' }, { a: '#d65a00', b: '#ff8a2a', c: '#ffcc66' }],
+  forgetmenot: [{ a: '#2a5ae0', b: '#5a8cff', c: '#a8c4ff' }, { a: '#e86aa8', b: '#ff9ac8', c: '#ffd8ec' }],
+  leaf: [{ a: '#1f7a2a', c: '#6ccf5a' }, { a: '#2a8a3a', c: '#9ae06a' }, { a: '#176a3a', c: '#4ab87a' }],
+};
+// how many of each go into the garden and how large they appear relative to each other
+const MIX = [['sunflower', 3, 1.12], ['daisy', 4, 0.95], ['gerbera', 5, 1.05], ['cornflower', 3, 0.9], ['aster', 4, 0.9], ['rose', 4, 1.05], ['ranunculus', 3, 1.0],
+  ['lily', 3, 1.2], ['pansy', 4, 0.92], ['blossom', 3, 0.85], ['poppy', 3, 1.0], ['plumeria', 2, 1.1], ['dahlia', 3, 1.0], ['forgetmenot', 2, 0.6], ['leaf', 3, 1.25]];
+
+function makeFlower(species, pal, seed) {
+  const c = document.createElement('canvas'); c.width = c.height = FS; const g = c.getContext('2d');
+  const R = FS * 0.43, rng = rngOf(seed);
+  g.translate(FS / 2, FS / 2); g.rotate(rng() * TAU);
+  g.shadowColor = 'rgba(35,10,30,.4)'; g.shadowBlur = FS * 0.035; g.shadowOffsetY = FS * 0.014;     // soft contact shadow
+  g.lineJoin = 'round';
+  // draw a silhouette first so the shadow falls once, then the detailed flower without shadow
+  SPECIES[species](g, R, rng, pal);
+  g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0;
+  // gentle top-left light and bottom-right shade, clipped to the flower
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-atop';
+  const lg = g.createRadialGradient(FS * 0.36, FS * 0.3, FS * 0.02, FS * 0.4, FS * 0.4, FS * 0.62); lg.addColorStop(0, 'rgba(255,255,255,.2)'); lg.addColorStop(1, 'rgba(0,0,0,.12)');
+  g.fillStyle = lg; g.fillRect(0, 0, FS, FS); g.globalCompositeOperation = 'source-over';
+  return c;
+}
+
+
+// Sprite library: every flower is painted once, then kept at three sizes so it always draws sharp and fast
+const SPRS = [], WARM = [], LEAVES = [], BLOOMS = [];
+(function buildSprites() {
+  let seed = 7;
+  for (const [sp, n, sz] of MIX) for (let i = 0; i < n; i++) {
+    const c = makeFlower(sp, PAL[sp][i % PAL[sp].length], seed += 13), m = [c];
+    let cur = c;
+    for (let s = FS / 2; s >= 30; s /= 2) { const d = document.createElement('canvas'); d.width = d.height = s; const g = d.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(cur, 0, 0, s, s); m.push(d); cur = d; }
+    const idx = SPRS.length; SPRS.push({ m, sz, sp });
+    if (sp === 'leaf') LEAVES.push(idx); else BLOOMS.push(idx);
+    if (['rose', 'blossom', 'dahlia', 'ranunculus', 'daisy'].includes(sp)) WARM.push(idx);
+  }
+})();
+const pickBloom = () => BLOOMS[(Math.random() * BLOOMS.length) | 0];
+const pickLeaf = () => LEAVES[(Math.random() * LEAVES.length) | 0];
+function mipOf(s, devPx) { const L = s.m; for (let i = L.length - 1; i >= 0; i--) if (L[i].width >= devPx * 0.9) return L[i]; return L[0]; }
+
+// paints onto any canvas g whose pixel scale is sc (main canvas = DPR, cache layers have their own); d = diameter in css px
+function drawSpriteOn(g, sc, s, x, y, d, rot, a) {
+  const im = mipOf(s, d * sc), k = d / im.width, cs = Math.cos(rot) * k * sc, sn = Math.sin(rot) * k * sc;
+  g.globalAlpha = a; g.setTransform(cs, sn, -sn, cs, x * sc, y * sc);
+  g.drawImage(im, -im.width / 2, -im.height / 2);
+  g.setTransform(sc, 0, 0, sc, 0, 0); g.globalAlpha = 1;
+}
+const drawSprite = (s, x, y, d, rot, a) => drawSpriteOn(ctx, DPR, s, x, y, d, rot, a);
+
+// =============== Other drawing helpers ===============
+function heartAt(x, y, size, hue, rot, alpha) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot * 0.2); ctx.scale(size * 1.8, size * 1.8); ctx.globalAlpha = alpha;
+  ctx.fillStyle = `hsl(${340 + (hue % 20)},90%,62%)`; ctx.fill(HEART); ctx.restore();
+}
+function glossyHeart(x, y, w, alpha) {
+  ctx.save(); ctx.translate(x, y); ctx.globalAlpha = alpha;
+  ctx.shadowColor = '#ff3d81'; ctx.shadowBlur = 18;
+  ctx.scale(w, w);
+  const g = ctx.createRadialGradient(-0.12, -0.18, 0.02, 0, 0, 0.62);
+  g.addColorStop(0, '#ffb3cc'); g.addColorStop(0.45, '#ff4d86'); g.addColorStop(1, '#c2185b');
+  ctx.fillStyle = g; ctx.fill(HEART);
+  ctx.shadowColor = 'transparent'; ctx.globalAlpha = alpha * 0.35; ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(-0.2, -0.28, 0.1, 0.05, -0.6, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function butterflyAt(x, y, size, hue, phase, alpha) {
+  const flap = Math.abs(Math.sin(phase)) * 0.9 + 0.15;
+  ctx.save(); ctx.translate(x, y); ctx.globalAlpha = alpha; ctx.fillStyle = `hsl(${hue},90%,66%)`;
+  for (const side of [-1, 1]) {
+    ctx.save(); ctx.scale(side * flap, 1);
+    ctx.beginPath(); ctx.ellipse(size * 0.6, -size * 0.3, size * 0.6, size * 0.45, -0.5, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(size * 0.45, size * 0.35, size * 0.4, size * 0.3, 0.5, 0, 6.29); ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = '#4a2c3a'; ctx.fillRect(-1.2, -size * 0.5, 2.4, size); ctx.restore();
+}
+function sparkAt(x, y, size, alpha) {
+  ctx.save(); ctx.translate(x, y); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = '#fff3b0';
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; ctx.lineTo(Math.cos(a) * size, Math.sin(a) * size); ctx.lineTo(Math.cos(a + Math.PI / 4) * size * 0.25, Math.sin(a + Math.PI / 4) * size * 0.25); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+// =============== Particles (flying flowers, hearts, butterflies, sparkles) - time based ===============
+const particles = [];
+const HUES = [0, 20, 45, 280, 320, 200, 340, 160];
+function addP(type, x, y, power = 1, big = false) {
+  if (particles.length > CONFIG.maxParticles) return null;
+  const base = { x, y, hue: HUES[(Math.random() * HUES.length) | 0] + rand(-10, 10), rot: rand(0, 6.28), vr: rand(-0.06, 0.06), phase: rand(0, 6.28), life: 0 };
+  if (type === 'spark') Object.assign(base, { type, vx: rand(-0.6, 0.6), vy: rand(-0.8, 0.3), size: rand(3, 7), max: rand(25, 45) });
+  else if (type === 'butterfly') Object.assign(base, { type, vx: rand(-1, 1), vy: rand(-1.4, -0.4), size: rand(11, 17), max: rand(180, 300) });
+  else if (type === 'heart') Object.assign(base, { type, vx: rand(-1.3, 1.3) * power, vy: rand(-2.4, -0.2) * power, size: rand(7, 17) * (big ? 1.5 : 1), max: rand(70, 150) });
+  else Object.assign(base, { type: 'flower', spr: pickBloom(), vx: rand(-1.3, 1.3) * power, vy: rand(-2.4, -0.2) * power, size: rand(20, 36) * (big ? 1.3 : 1), max: rand(70, 150) });
+  particles.push(base);
+  return base;
+}
+function burstAt(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const p = addP(i % 3 === 0 ? 'heart' : 'flower', x, y, 1, true);
+    if (!p) return;
+    const ang = rand(0, 6.28), sp = rand(2, 7);
+    p.vx = Math.cos(ang) * sp; p.vy = Math.sin(ang) * sp - 1; p.max = rand(60, 120);
+  }
+}
+function stepParticles(dt) {
+  const k = dt / 16.667;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life += k;
+    if (p.life > p.max) { particles.splice(i, 1); continue; }
+    if (p.type === 'butterfly') { p.phase += 0.35 * k; p.vx += Math.sin(p.life * 0.07 + p.rot) * 0.06 * k; p.vy += (Math.cos(p.life * 0.05) * 0.04 - 0.01) * k; }
+    else if (p.type === 'spark') { p.vy += 0.01 * k; }
+    else { p.vy += 0.03 * k; p.vx *= Math.pow(0.985, k); }
+    p.x += p.vx * k; p.y += p.vy * k; p.rot += p.vr * k;
+    const t = p.life / p.max, a = t < 0.1 ? t / 0.1 : t > 0.65 ? Math.max(0, (1 - t) / 0.35) : 1;
+    if (p.type === 'flower') drawSprite(SPRS[p.spr], p.x, p.y, p.size * (1 - (p.shrink || 0) * t), p.rot, a);
+    else if (p.type === 'heart') heartAt(p.x, p.y, p.size, p.hue, p.rot, a);
+    else if (p.type === 'spark') sparkAt(p.x, p.y, p.size * (1 - t * 0.5), a);
+    else butterflyAt(p.x, p.y, p.size, p.hue, p.phase, a);
+  }
+}
+
+// =============== Sound (soft chime, no files) ===============
+let audio = null;
+function chime() {
+  if (!audio) return;
+  const now = audio.currentTime;
+  [659.25, 783.99, 987.77, 1318.5].forEach((f, i) => {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, now + i * 0.13);
+    g.gain.linearRampToValueAtTime(0.12, now + i * 0.13 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + i * 0.13 + 1.1);
+    o.connect(g).connect(audio.destination); o.start(now + i * 0.13); o.stop(now + i * 0.13 + 1.2);
+  });
+}
+
+// =============== Hand poses: point / open ===============
+// Done in video-pixel space so it does not depend on screen size or mirroring.
+function poseOf(raw, zs) {
+  const h = raw.map((l, i) => ({ x: l.x * vw, y: l.y * vh, z: (zs ? zs[i] : 0) * vw })), w = h[0];
+  const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  // cosine between mcp->pip and pip->tip: ~1 for a straight finger (even when it points at the camera), <0.3 when bent
+  const straight = (m, p, t) => { const ax = h[p].x - h[m].x, ay = h[p].y - h[m].y, az = h[p].z - h[m].z, bx = h[t].x - h[p].x, by = h[t].y - h[p].y, bz = h[t].z - h[p].z;
+    return (ax * bx + ay * by + az * bz) / (Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz) + 1e-6); };
+  const ext = (t, p, m, k) => dist(h[t], w) > dist(h[p], w) * k || (straight(m, p, t) > 0.8 && d3(h[t], w) > d3(h[m], w) * 1.2);
+  const cur = (t, p, m, mc) => (dist(h[t], w) < dist(h[mc], w) * 1.15) || straight(m, p, t) < 0.25;
+  const curled = [cur(12, 10, 9, 9), cur(16, 14, 13, 13), cur(20, 18, 17, 17)].filter(Boolean).length;
+  return {
+    point: ext(8, 6, 5, 1.08) && curled >= 2,                                  // index out, others folded
+    open: ext(8, 6, 5, 1.15) && ext(12, 10, 9, 1.15) && ext(16, 14, 13, 1.15) && ext(20, 18, 17, 1.15),
+  };
+}
+// Debounce: a pose switches on after ~60 ms and off after ~150 ms, so one noisy tracker frame can't break a trail or a scatter.
+function stablePose(h, raw, dt) {
+  const st = h.ps || (h.ps = { point: false, open: false, on: { point: 0, open: 0 }, off: { point: 0, open: 0 } });
+  for (const k of ['point', 'open']) {
+    if (raw[k]) { st.on[k] += dt; st.off[k] = 0; } else { st.off[k] += dt; st.on[k] = 0; }
+    if (!st[k] && st.on[k] > 0.06) st[k] = true;
+    else if (st[k] && st.off[k] > 0.15) st[k] = false;
+  }
+  if (st.point && st.open) { if (raw.point && !raw.open) st.open = false; else st.point = false; }
+  return { point: st.point, open: st.open };
+}
+
+// =============== Heart gesture detection ===============
+const handScale = h => Math.max(dist(h[0], h[9]), dist(h[5], h[17]), 8);
+function bboxOf(pts) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
+}
+function detectHeart(raw, scr) {
+  const hs = raw.map(h => h.map(l => ({ x: l.x * vw, y: l.y * vh })));
+  const F = CONFIG.forgiveness;
+  let dbg = null;
+  for (let i = 0; i < hs.length; i++) for (let j = i + 1; j < hs.length; j++) {     // any two hands (yours, hers, or one person's pair)
+    const a = hs[i], b = hs[j];
+    if (poseOf(raw[i]).open || poseOf(raw[j]).open) continue;      // flat open hands are never a heart (they only scatter)
+    const sc = (handScale(a) + handScale(b)) / 2;
+    const idx = dist(a[8], b[8]) / sc, thb = dist(a[4], b[4]) / sc;
+    const idxR = dist(a[8], b[8]) / Math.max(dist(a[5], b[5]), 1);
+    const thbR = dist(a[4], b[4]) / Math.max(dist(a[2], b[2]), 1);
+    const gap = dist(mid(a[8], b[8]), mid(a[4], b[4])) / sc;
+    dbg = { idx, thb, idxR, thbR, gap };
+    if (idx < 0.85 * F && thb < 0.85 * F && idxR < 0.7 * F && thbR < 0.75 * F && gap > 0.2) {
+      const bb = bboxOf([...scr[i], ...scr[j]]);
+      const w = clamp(Math.max(bb.w, bb.h * 0.95) * 1.15, 140, Math.min(W, H) * 1.05);
+      return { ok: true, dbg, box: { x: bb.x, y: bb.y, w } };
+    }
+  }
+  if (CONFIG.fingerHeart) {
+    for (let i = 0; i < hs.length; i++) {
+      const h = hs[i], sc = handScale(h);
+      const pinch = dist(h[4], h[8]) / sc;
+      const idxExt = dist(h[8], h[0]) > dist(h[5], h[0]) * 1.3;
+      const curled = [[12, 9], [16, 13], [20, 17]].every(([t, m]) => dist(h[t], h[0]) < dist(h[m], h[0]) * 1.25);
+      if (pinch < 0.45 * F && idxExt && curled) {
+        const bb = bboxOf(scr[i]), tm = mid(scr[i][4], scr[i][8]);
+        const w = clamp(Math.max(bb.w, bb.h) * 1.7, 140, Math.min(W, H) * 0.9);
+        return { ok: true, dbg, box: { x: tm.x, y: tm.y - w * 0.08, w } };
+      }
+    }
+  }
+  return { ok: false, dbg };
+}
+
+// =============== Smooth motion ===============
+// The tracker reports ~15-25 times a second; the screen draws 60. Two steps make hands and head glide:
+//  1) a One-Euro filter removes jitter when still but follows quickly when moving
+//  2) the drawn position chases the filtered position, nudged forward by the measured speed
+//     (cancels the tracker's delay), so motion is continuous instead of stepping at the tracker's rate.
+class OneEuro {
+  constructor(minC, beta, dC = 1) { this.minC = minC; this.beta = beta; this.dC = dC; this.x = null; this.dx = 0; this.t = 0; }
+  static alpha(cut, dt) { return 1 / (1 + (1 / (TAU * cut)) / dt); }
+  filter(v, t) {
+    if (this.x === null) { this.x = v; this.t = t; return v; }
+    const dt = Math.max((t - this.t) / 1000, 1e-3); this.t = t;
+    this.dx += OneEuro.alpha(this.dC, dt) * ((v - this.x) / dt - this.dx);
+    this.x += OneEuro.alpha(this.minC + this.beta * Math.abs(this.dx), dt) * (v - this.x);
+    return this.x;
+  }
+}
+class Track {
+  constructor(n, minC, beta, tau, lead) {
+    this.n = n; this.f = Array.from({ length: n }, () => new OneEuro(minC, beta));
+    this.target = new Float64Array(n); this.vel = new Float64Array(n); this.disp = new Float64Array(n);
+    this.tS = 0; this.init = false; this.tau = tau; this.lead = lead;
+  }
+  sample(vals, t) {
+    const dt = Math.max((t - this.tS) / 1000, 1e-3);
+    for (let i = 0; i < this.n; i++) {
+      const prev = this.target[i], f = this.f[i].filter(vals[i], t);
+      if (!this.init) { this.target[i] = this.disp[i] = f; this.vel[i] = 0; }
+      else { this.target[i] = f; this.vel[i] += ((f - prev) / dt - this.vel[i]) * 0.5; }
+    }
+    this.init = true; this.tS = t;
+  }
+  step(now, dt) {
+    const ext = clamp((now - this.tS) / 1000, 0, 0.1) + this.lead, k = 1 - Math.exp(-dt / this.tau);
+    for (let i = 0; i < this.n; i++) this.disp[i] += (this.target[i] + this.vel[i] * ext - this.disp[i]) * k;
+  }
+}
+
+let htracks = [], nextTrackId = 1, hands = [];
+const faceTrack = new Track(4, 0.9, 5, 70, 0.03);       // x, y, width, roll
+let faceSeenAt = -1e9;
+// A hand reading is rejected if its shape is impossible (the model sometimes returns a stretched "ghost" skeleton)
+function plausibleHand(lm) {
+  const d = (a, b) => Math.hypot((lm[a].x - lm[b].x) * vw, (lm[a].y - lm[b].y) * vh);
+  const palm = d(0, 9); if (palm < 6) return false;
+  for (const [t, m] of [[4, 2], [8, 5], [12, 9], [16, 13], [20, 17]]) if (d(t, m) > palm * 2.1) return false;     // finger length vs palm
+  const w = d(5, 17) / palm; if (w < 0.3 || w > 1.7) return false;                                              // knuckle width vs palm
+  for (const t of [8, 12, 16, 20]) if (d(t, 0) > palm * 3.0) return false;
+  return true;
+}
+function boxIoU(a, b) {
+  const bb = l => { let x0 = 9, y0 = 9, x1 = -9, y1 = -9; for (const p of l) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); } return [x0, y0, x1, y1]; };
+  const A = bb(a), B = bb(b), iw = Math.min(A[2], B[2]) - Math.max(A[0], B[0]), ih = Math.min(A[3], B[3]) - Math.max(A[1], B[1]);
+  if (iw <= 0 || ih <= 0) return 0; const I = iw * ih; return I / ((A[2] - A[0]) * (A[3] - A[1]) + (B[2] - B[0]) * (B[3] - B[1]) - I);
+}
+function ingestHands(raw0, t, scores0) {
+  // keep the most confident readings first; drop impossible shapes and duplicate detections of the same hand
+  const order = raw0.map((_, i) => i).sort((a, b) => ((scores0 && scores0[b] ? scores0[b].score : 1) - (scores0 && scores0[a] ? scores0[a].score : 1)));
+  const raw = [], scores = [];
+  for (const i of order) {
+    if (!plausibleHand(raw0[i])) continue;
+    if (raw.some(r => boxIoU(r, raw0[i]) > 0.4)) continue;
+    raw.push(raw0[i]); scores.push(scores0 && scores0[i] ? scores0[i] : { score: 1, label: '?' });
+  }
+  const used = new Set();
+  for (let ri = 0; ri < raw.length; ri++) {
+    const lm = raw[ri], sc = scores && scores[ri] ? scores[ri].score : 1;
+    let best = null, bd = 0.3;
+    for (const h of htracks) { if (used.has(h)) continue; const d = Math.hypot(h.tr.target[0] - lm[0].x, h.tr.target[1] - lm[0].y); if (d < bd) { bd = d; best = h; } }
+    const vals = new Float64Array(42);
+    for (let i = 0; i < 21; i++) { vals[i * 2] = lm[i].x; vals[i * 2 + 1] = lm[i].y; }
+    if (!best && sc < 0.7) continue;                                   // ghost hands are rejected: a new hand must be clearly a hand
+    if (best && sc < 0.4) continue;                                   // new hands need good confidence (existing ones are kept at lower)
+    if (!best) { best = { id: nextTrackId++, tr: new Track(42, 1.5, 14, 40, 0.03), lm: Array.from({ length: 21 }, () => ({ x: lm[0].x, y: lm[0].y })), seen: t, lastPlant: null }; htracks.push(best); }
+    if (best) { let md = 0; for (let i = 0; i < 21; i++) md += Math.hypot(vals[i * 2] - best.tr.target[i * 2], vals[i * 2 + 1] - best.tr.target[i * 2 + 1]); if (md / 21 > 0.2) best.tr = new Track(42, 1.5, 14, 40, 0.03); }   // sudden different shape: snap instead of blending
+    best.z = lm.map(p => p.z || 0); best.sc = sc; best.lab = scores && scores[ri] ? scores[ri].label : '?'; best.tr.sample(vals, t); best.seen = t; used.add(best);
+  }
+}
+function ingestFace(d, t) {
+  if (!d) return;
+  const bb = d.boundingBox; let roll = 0;
+  const kp = d.landmarks || d.keypoints;
+  if (kp && kp.length >= 2) {
+    let a = kp[0], b = kp[1]; if (a.x > b.x) { const s = a; a = b; b = s; }
+    roll = clamp(Math.atan2((b.y - a.y) * vh, (b.x - a.x) * vw), -0.8, 0.8);
+  }
+  faceTrack.sample([bb.xCenter, bb.yCenter, bb.width, roll], t); faceSeenAt = t;
+}
+const head = { x: W / 2, y: H / 2, w: 200, roll: 0, ok: false, has: false };
+function updateHead(now, dt) {
+  if (!faceTrack.init) { head.ok = false; return; }
+  faceTrack.step(now, dt);
+  const d = faceTrack.disp, c = toScreen({ x: d[0], y: d[1] });
+  head.x = c.x; head.y = c.y; head.w = Math.max(d[2] * vw * coverScale(), 40); head.roll = mirrored ? -d[3] : d[3];
+  head.ok = now - faceSeenAt < 1500; head.has = true;
+}
+
+// =============== The garden ===============
+let planted = [], pending = [], ghosts = [];
+// where the head-anchored flowers sit right now (with a tiny breathing sway so the crown feels alive)
+function anchorXform(now) {
+  const sway = Math.sin(now / 1900) * 0.010, br = 1 + Math.sin(now / 1400) * 0.006;
+  return { x: head.has ? head.x : W / 2, y: head.has ? head.y : H / 2, w: (head.has ? head.w : 200) * br, roll: head.roll + sway };
+}
+function flowerPos(f, xf) {
+  if (!f.anc) return { x: f.x, y: f.y, s: f.s };
+  const c = Math.cos(xf.roll), s = Math.sin(xf.roll);
+  return { x: xf.x + (f.rx * c - f.ry * s) * xf.w, y: xf.y + (f.rx * s + f.ry * c) * xf.w, s: f.sr * xf.w };
+}
+function plant(P, now, still) {
+  const sprIdx = Math.random() < 0.07 ? pickLeaf() : pickBloom(), sp = SPRS[sprIdx];
+  const f = { spr: sprIdx, rot: rand(0, TAU), t0: now, leaf: (sp.sp !== 'leaf' && Math.random() < 0.34) ? pickLeaf() : -1, lr: rand(0, TAU) };
+  const xf = anchorXform(now), jit = (head.ok ? head.w : Math.min(W, H) * 1.5) * (still ? 0.07 : 0.02);
+  const x = P.x + rand(-jit, jit), y = P.y + rand(-jit, jit);
+  if (CONFIG.followHead && head.ok && dist({ x, y }, xf) < xf.w * 1.75) {              // near her head: stick to it (and follow its tilt)
+    const dx = (x - xf.x) / xf.w, dy = (y - xf.y) / xf.w, c = Math.cos(xf.roll), s = Math.sin(xf.roll);
+    f.anc = true; f.rx = dx * c + dy * s; f.ry = -dx * s + dy * c; f.sr = rand(0.12, 0.25) * sp.sz;
+  } else { f.x = x; f.y = y; f.s = (head.ok ? head.w * rand(0.12, 0.25) : Math.min(W, H) * rand(0.07, 0.115)) * sp.sz; }
+  planted.push(f); pending.push(f);
+  if (planted.length > CONFIG.maxPlanted) {                       // drop the oldest in one go (one cheap redraw, not one per flower)
+    const cut = planted.splice(0, 40); for (const o of cut) o.dead = true; layersDirty = true;
+  }
+}
+
+// Settled flowers are painted once into two cached layers and copied every frame in one step:
+//  - freeLayer: flowers planted away from her head (screen space)
+//  - anchLayer: flowers around her head, painted in "head space" so a single scaled+rotated copy follows her head exactly
+// Only flowers that are still growing (first 0.4s) are drawn one by one.
+const LAYER = 2048, EXT = 2.1, REF = LAYER / (2 * EXT), SETTLE = 400;
+let anchLayer = null, freeLayer = null, aG = null, fG = null, layerW = -1, layerH = -1, layerD = -1;
+let layersDirty = false, rebuildUrgent = false, lastRebuild = 0, hasAnch = false, hasFree = false;
+function buildLayers() {
+  anchLayer = document.createElement('canvas'); anchLayer.width = anchLayer.height = LAYER; aG = anchLayer.getContext('2d');
+  freeLayer = document.createElement('canvas'); freeLayer.width = Math.ceil(W * DPR); freeLayer.height = Math.ceil(H * DPR); fG = freeLayer.getContext('2d');
+  aG.setTransform(1, 0, 0, 1, 0, 0); fG.setTransform(DPR, 0, 0, DPR, 0, 0); aG.imageSmoothingQuality = fG.imageSmoothingQuality = 'high';
+  layerW = W; layerH = H; layerD = DPR; hasAnch = hasFree = false; layersDirty = rebuildUrgent = true;
+}
+function bake(f) {
+  const s = SPRS[f.spr];
+  if (f.anc) {
+    const x = LAYER / 2 + f.rx * REF, y = LAYER / 2 + f.ry * REF, d = f.sr * REF;
+    if (f.leaf >= 0) drawSpriteOn(aG, 1, SPRS[f.leaf], x, y, d * 1.45, f.lr, 1);
+    drawSpriteOn(aG, 1, s, x, y, d, f.rot, 1); hasAnch = true;
+  } else {
+    if (f.leaf >= 0) drawSpriteOn(fG, DPR, SPRS[f.leaf], f.x, f.y, f.s * 1.45, f.lr, 1);
+    drawSpriteOn(fG, DPR, s, f.x, f.y, f.s, f.rot, 1); hasFree = true;
+  }
+  f.baked = true;
+}
+function rebuildLayers(now) {
+  aG.setTransform(1, 0, 0, 1, 0, 0); aG.clearRect(0, 0, LAYER, LAYER);
+  fG.setTransform(1, 0, 0, 1, 0, 0); fG.clearRect(0, 0, freeLayer.width, freeLayer.height); fG.setTransform(DPR, 0, 0, DPR, 0, 0);
+  hasAnch = hasFree = false;
+  for (const f of planted) { if (now - f.t0 >= SETTLE) bake(f); else f.baked = false; }
+  layersDirty = rebuildUrgent = false; lastRebuild = now;
+}
+function clearGarden() { for (const f of planted) f.dead = true; planted = []; pending = []; ghosts = []; buildLayers(); }
+
+// Open hand: the whole garden lifts off as one cloud (the cached layers fly away together), while a handful of
+// individual flowers burst out in front of it for depth, then everything fades.
+function scatterAll(now, from) {
+  if (planted.length < 5) return false;
+  const c = head.ok ? head : { x: W / 2, y: H / 2 };
+  let dx = c.x - from.x, dy = c.y - from.y - Math.min(W, H) * 0.15, d = Math.hypot(dx, dy) || 1;
+  dx /= d; dy = dy / d - 0.55; d = Math.hypot(dx, dy) || 1; dx /= d; dy /= d;
+  const xf = anchorXform(now);
+  ghosts.push({ free: hasFree ? freeLayer : null, anch: hasAnch ? anchLayer : null, xf: { x: xf.x, y: xf.y, w: xf.w, roll: xf.roll }, t0: now, dx, dy, spin: rand(-0.18, 0.18) });
+  const n = Math.min(80, planted.length);
+  for (let i = 0; i < n; i++) {
+    const f = planted[(Math.random() * planted.length) | 0], q = flowerPos(f, xf);
+    const ang = Math.atan2(q.y - c.y, q.x - c.x) + rand(-0.6, 0.6), sp = rand(4, 11);
+    particles.push({ type: 'flower', spr: f.spr, x: q.x, y: q.y, vx: Math.cos(ang) * sp * 0.7 + dx * rand(3, 8), vy: Math.sin(ang) * sp * 0.7 + dy * rand(3, 8) - 1,
+      size: q.s, rot: f.rot, vr: rand(-0.25, 0.25), phase: 0, life: 0, max: rand(40, 75), hue: 0, shrink: 0.5 });
+  }
+  for (const f of planted) f.dead = true;
+  planted = []; pending = []; buildLayers();            // fresh empty layers; the old ones live on inside the ghost
+  return true;
+}
+function drawGhosts(now) {
+  for (let i = ghosts.length - 1; i >= 0; i--) {
+    const g = ghosts[i], p = (now - g.t0) / 1150;
+    if (p >= 1) { ghosts.splice(i, 1); continue; }
+    const e = 1 - Math.pow(1 - p, 3), a = Math.pow(1 - p, 1.4), m = Math.min(W, H) * 0.95;
+    const ox = g.dx * e * m, oy = g.dy * e * m, sc = 1 + 0.4 * e, rot = g.spin * e;
+    ctx.globalAlpha = a;
+    if (g.free) { ctx.save(); ctx.translate(W / 2 + ox, H / 2 + oy); ctx.rotate(rot); ctx.scale(sc, sc); ctx.drawImage(g.free, -W / 2, -H / 2, W, H); ctx.restore(); }
+    if (g.anch) { ctx.save(); ctx.translate(g.xf.x + ox, g.xf.y + oy); ctx.rotate(g.xf.roll + rot); const k = g.xf.w / REF * sc; ctx.scale(k, k); ctx.drawImage(g.anch, -LAYER / 2, -LAYER / 2); ctx.restore(); }
+    ctx.globalAlpha = 1;
+  }
+}
+function drawGarden(now) {
+  if (layerW !== W || layerH !== H || layerD !== DPR) buildLayers();
+  if (layersDirty && (rebuildUrgent || now - lastRebuild > 600)) rebuildLayers(now);
+  if (pending.length) {                                   // bake flowers that have finished growing
+    let w = 0;
+    for (const f of pending) {
+      if (f.dead || f.baked) continue;
+      if (now - f.t0 >= SETTLE) bake(f); else pending[w++] = f;
+    }
+    pending.length = w;
+  }
+  drawGhosts(now);
+  if (hasFree) ctx.drawImage(freeLayer, 0, 0, W, H);
+  const xf = anchorXform(now);
+  if (hasAnch && head.has) {
+    ctx.save(); ctx.translate(xf.x, xf.y); ctx.rotate(xf.roll); const k = xf.w / REF; ctx.scale(k, k);
+    ctx.drawImage(anchLayer, -LAYER / 2, -LAYER / 2); ctx.restore();
+  }
+  for (const f of pending) {                              // young flowers: grow with a little bounce
+    const q = flowerPos(f, xf), g = easeOutBack(Math.min((now - f.t0) / 380, 1));
+    if (f.leaf >= 0) drawSprite(SPRS[f.leaf], q.x, q.y, q.s * 1.45 * g, f.lr, 1);
+    drawSprite(SPRS[f.spr], q.x, q.y, q.s * g, f.rot, 1);
+  }
+}
+
+// Soft pink "skin" and a fine skeleton on the hands, like the reference
+const FINGERS = [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]];
+const CONN = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
+function drawHands() {
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const h of hands) {
+    const p = h.map(toScreen), palm = Math.hypot(p[9].x - p[0].x, p[9].y - p[0].y);
+    ctx.fillStyle = 'rgba(255,205,222,.30)'; ctx.beginPath();
+    [0, 1, 5, 9, 13, 17].forEach((k, i) => i ? ctx.lineTo(p[k].x, p[k].y) : ctx.moveTo(p[k].x, p[k].y));
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,205,222,.30)'; ctx.lineWidth = clamp(palm * 0.2, 6, 26); ctx.beginPath();
+    for (const f of FINGERS) { ctx.moveTo(p[f[0]].x, p[f[0]].y); for (let k = 1; k < 4; k++) ctx.lineTo(p[f[k]].x, p[f[k]].y); }
+    ctx.stroke();
+    ctx.beginPath(); for (const [a, b] of CONN) { ctx.moveTo(p[a].x, p[a].y); ctx.lineTo(p[b].x, p[b].y); }
+    ctx.strokeStyle = 'rgba(255,140,180,.28)'; ctx.lineWidth = 5; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,240,246,.9)'; ctx.lineWidth = 1.6; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
+    for (const q of p) { ctx.beginPath(); ctx.arc(q.x, q.y, 2.3, 0, 6.29); ctx.fill(); }
+  }
+  ctx.restore();
+}
+let wandTips = [];
+function drawWands(now) {
+  for (const w of wandTips) {
+    const r = 16 + Math.sin(now / 120) * 3, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
+    g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(0.4, 'rgba(255,220,240,.5)'); g.addColorStop(1, 'rgba(255,200,230,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(w.x, w.y, r, 0, 6.29); ctx.fill();
+  }
+}
+
+// =============== State ===============
+let trFrames = 0, trFps = 0, passMs = 20;
+let hp = 0, lastOk = 0, cooldownUntil = 0, heartBox = null, heartDbg = null, burst = null, lastHeartActive = -1e9;
+let msg = null;                     // {start, end}
+let handsSeenAt = 0, everTriggered = false, lastPointAt = -1e9, openHold = 0, scatterCool = 0;
+
+function trigger(now, manual) {
+  const b = (!manual && heartBox) ? heartBox : { x: W / 2, y: H / 2, w: Math.min(W, H) * 0.6 };
+  everTriggered = true;
+  cooldownUntil = now + CONFIG.messageSeconds * 1000 + 1500;
+  burst = { start: now, x: b.x, y: b.y, w: b.w };
+  msg = { start: now, end: now + CONFIG.messageSeconds * 1000 };
+  chime();
+  burstAt(b.x, b.y, 70);
+  for (let i = 0; i < 70; i++) addP('heart', rand(0, W), H + 10, rand(1.5, 3.4), true);
+  for (let i = 0; i < 40; i++) addP('flower', rand(0, W), H + 10, rand(1.5, 3.2));
+  for (let i = 0; i < 6; i++) addP('butterfly', rand(0, W), H * 0.85);
+  document.getElementById('replay').classList.add('show');
+}
+
+function update(now, dt) {
+  // smooth hands + head
+  htracks = htracks.filter(h => now - h.seen < 250);
+  for (const h of htracks) { h.tr.step(now, dt); const d = h.tr.disp; for (let i = 0; i < 21; i++) { h.lm[i].x = d[i * 2]; h.lm[i].y = d[i * 2 + 1]; } }
+  hands = htracks.map(h => h.lm);
+  updateHead(now, dt);
+  const pts = hands.map(h => h.map(toScreen));
+  if (pts.length && !handsSeenAt) handsSeenAt = now;
+
+  // ---- heart gesture: must be held for holdMs, short dropouts are forgiven ----
+  const res = detectHeart(hands, pts);
+  heartDbg = res.dbg;
+  if (now < cooldownUntil) {
+    hp = 0;
+  } else if (res.ok) {
+    heartBox = (heartBox && now - lastOk < 600)
+      ? { x: heartBox.x + (res.box.x - heartBox.x) * 0.35, y: heartBox.y + (res.box.y - heartBox.y) * 0.35, w: heartBox.w + (res.box.w - heartBox.w) * 0.35 }
+      : res.box;
+    hp += dt; lastOk = now;
+  } else if (now - lastOk > 350) {
+    hp = Math.max(0, hp - dt * 2);        // hands lost or heart broken: fade progress away
+  }
+  if (hp >= CONFIG.holdMs && now >= cooldownUntil) { trigger(now, false); hp = 0; }
+  if (res.ok || hp > 0) lastHeartActive = now;
+  const heartActive = now - lastHeartActive < 500;     // don't plant/scatter while making a heart
+
+  // ---- garden: point to plant, open hand to scatter ----
+  wandTips = [];
+  const poses = hands.map((l, i) => stablePose(htracks[i], poseOf(l, htracks[i].z), dt));
+  let pointing = false;
+  const scale = head.ok ? head.w : Math.min(W, H) * 1.5, spacing = scale * 0.085;
+  poses.forEach((ps, i) => {
+    const h = htracks[i], P = pts[i][8];
+    if (heartActive || !ps.point) { h.lastPlant = null; return; }
+    pointing = true; wandTips.push(P);
+    if (Math.random() < 0.5) addP('spark', P.x + rand(-8, 8), P.y + rand(-8, 8));
+    const lp = h.lastPlant;
+    if (!lp || now - lp.t > 400) { plant(P, now, false); h.lastPlant = { x: P.x, y: P.y, t: now }; }
+    else {
+      const dd = dist(lp, P);
+      if (dd > spacing) {                                   // moved: plant along the path
+        const n = Math.min(6, Math.floor(dd / spacing));
+        for (let k = 1; k <= n; k++) plant({ x: lp.x + (P.x - lp.x) * k / n, y: lp.y + (P.y - lp.y) * k / n }, now, false);
+        h.lastPlant = { x: P.x, y: P.y, t: now };
+      } else if (now - lp.t > 150) { plant(P, now, true); lp.t = now; }   // held still: build up a cluster
+    }
+  });
+  if (pointing) lastPointAt = now;
+  const open = poses.map((p, i) => p.open ? i : -1).filter(i => i >= 0);
+  if (open.length && !pointing && now - lastPointAt > 350 && !heartActive && now > scatterCool && planted.length >= 5) openHold += dt;
+  else openHold = Math.max(0, openHold - dt * 2);
+  if (openHold > CONFIG.scatterHoldMs) {
+    const from = { x: open.reduce((s, i) => s + pts[i][9].x, 0) / open.length, y: open.reduce((s, i) => s + pts[i][9].y, 0) / open.length };
+    scatterAll(now, from); scatterCool = now + 900; openHold = 0;
+  }
+  if (planted.length > 12 && Math.random() < 0.012) {
+    const f = planted[(Math.random() * planted.length) | 0], q = flowerPos(f, anchorXform(now)); addP('butterfly', q.x, q.y);
+  }
+
+  // ---- hint pill ----
+  let hint = DEFAULT_HINT;
+  if (msg) hint = '';
+  else if (!handsSeenAt) hint = 'Show your hands';
+  else if (hp > 0) hint = 'Hold it...';
+  else if (!everTriggered && now - handsSeenAt > 15000 && planted.length > 6) hint = 'Now make a heart with your hands';
+  if (hint) say(hint); else statusEl.classList.remove('on');
+}
+
+// A garland of flowers grows around the heart from the bottom point up to the top
+// while she holds the pose, so she can see it is working.
+function drawHeartOutline(b, prog, t) {
+  ctx.save(); ctx.translate(b.x, b.y); ctx.scale(b.w, b.w);
+  ctx.globalAlpha = 0.18 * prog; ctx.fillStyle = '#ff3d81'; ctx.fill(HEART);
+  ctx.globalAlpha = 0.4 * prog; ctx.lineWidth = 2 / b.w; ctx.strokeStyle = '#fff'; ctx.stroke(HEART);
+  ctx.restore();
+  const M = 48, half = M / 2, shown = Math.floor(half * prog), fs = b.w * 0.17;
+  for (let k = 0; k <= shown; k++) {
+    for (const sgn of (k === 0 ? [1] : [1, -1])) {
+      const p = heartPt(0.5 + sgn * k / M), i = k * 2 + (sgn < 0 ? 1 : 0);
+      drawSprite(SPRS[WARM[i % WARM.length]], b.x + p.x * b.w, b.y + p.y * b.w + Math.sin(t / 300 + i) * 1.5,
+                 fs * (0.92 + 0.14 * Math.sin(t / 250 + i)), i + t / 2500, 1);
+    }
+  }
+}
+function drawBurst(now) {
+  if (!burst) return;
+  const p = (now - burst.start) / 1000;
+  if (p > 1) { burst = null; return; }
+  const e = 1 - Math.pow(1 - p, 3);
+  glossyHeart(burst.x, burst.y, burst.w * (0.7 + 0.9 * e), (1 - p) * 0.9);
+}
+
+// =============== Text drawn on canvas (so photos include it) ===============
+let titleImg = null, titleKey = '';
+function drawTitle() {
+  const fs = Math.min(W * 0.09, 64), h = Math.ceil(fs * 2.4), key = W + 'x' + H + CONFIG.title + CONFIG.subtitle;
+  if (key !== titleKey) {
+    titleKey = key;
+    const c = document.createElement('canvas'); c.width = Math.ceil(W * DPR); c.height = Math.ceil(h * DPR);
+    const g = c.getContext('2d'); g.scale(DPR, DPR); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `${fs}px Pacifico, cursive`; g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 14; g.shadowOffsetY = 2;
+    g.fillStyle = '#ffe45e'; g.fillText(CONFIG.title, W / 2, fs * 0.9);
+    g.font = `${fs * 0.42}px Pacifico, cursive`; g.fillStyle = 'rgba(255,255,255,.92)';
+    g.fillText(CONFIG.subtitle, W / 2, fs * 0.9 + fs * 0.85);
+    titleImg = { c, h, top: H * 0.085 - fs * 0.9 };
+  }
+  ctx.drawImage(titleImg.c, 0, titleImg.top, W, titleImg.h);
+}
+function drawMessage(now) {
+  if (!msg) return;
+  if (now > msg.end + 600) { msg = null; return; }
+  const fadeIn = Math.min((now - msg.start) / 500, 1), fadeOut = now > msg.end ? 1 - (now - msg.end) / 600 : 1;
+  const a = Math.max(0, Math.min(fadeIn, fadeOut)), pop = 0.8 + 0.2 * easeOutBack(fadeIn);
+  const lines = CONFIG.heartMessage;
+  const shown = Math.floor((now - msg.start - 400) / 28);
+  let fs = Math.min(W * 0.065, 36);
+  ctx.font = `${fs}px Pacifico, cursive`;
+  const cardW = Math.min(W * 0.88, 540);
+  while (fs > 9 && Math.max(...lines.map(l => ctx.measureText(l).width)) > cardW - 56) { fs -= 1; ctx.font = `${fs}px Pacifico, cursive`; }
+  while (fs > 11 && lines.length * fs * 1.5 + 64 > H * 0.8) { fs -= 1; ctx.font = `${fs}px Pacifico, cursive`; }
+  const lh = fs * 1.5, cardH = lines.length * lh + 64;
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(pop, pop); ctx.globalAlpha = a;
+  ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = 'rgba(255,240,246,.95)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(-cardW / 2, -cardH / 2, cardW, cardH, 28); else ctx.rect(-cardW / 2, -cardH / 2, cardW, cardH);
+  ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.fillStyle = '#c2185b'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  let left = Math.max(0, shown);
+  lines.forEach((l, i) => {
+    const part = l.slice(0, Math.max(0, Math.min(l.length, left))); left -= l.length;
+    ctx.font = `${fs}px Pacifico, cursive`;
+    ctx.fillText(part, 0, -cardH / 2 + 32 + lh * (i + 0.5));
+  });
+  // beating heart above the card
+  const hs = 0.07 + Math.sin(now / 200) * 0.004;
+  ctx.translate(0, -cardH / 2 - 6); ctx.scale(hs * W, hs * W);
+  ctx.fillStyle = '#ff3d81'; ctx.fill(HEART);
+  ctx.restore();
+}
+let drawFps = 0, fpsAcc = 0, fpsN = 0;
+function drawDebug() {
+  if (!DEBUG) return;
+  ctx.save(); ctx.font = '12px monospace'; ctx.textAlign = 'left'; ctx.fillStyle = '#0f0'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
+  const d = heartDbg, f = v => v == null ? '-' : v.toFixed(2);
+  const lines = [`draw ${drawFps.toFixed(0)}fps  tracker ${trFps.toFixed(0)}fps  pass ${passMs.toFixed(0)}ms`,
+    `hands ${hands.length}  planted ${planted.length}  head ${head.ok ? 'yes' : 'no'}  roll ${(head.roll * 57.3).toFixed(0)}deg`,
+    d ? `heart idx ${f(d.idx)} thb ${f(d.thb)} idxR ${f(d.idxR)} thbR ${f(d.thbR)} gap ${f(d.gap)}` : 'heart: need two hands'];
+  htracks.forEach(h => lines.push(`hand#${h.id} ${h.lab} score ${(h.sc || 0).toFixed(2)} point ${h.ps && h.ps.point ? 'Y' : '-'} open ${h.ps && h.ps.open ? 'Y' : '-'}`));
+  lines.forEach((l, i) => ctx.fillText(l, 8, H * 0.2 + i * 16));
+  ctx.restore();
+}
+
+// =============== Render ===============
+let lastNow = 0;
+function frame(now) {
+  const dt = Math.min(now - (lastNow || now), 50); lastNow = now;
+  fpsAcc += dt; fpsN++; if (fpsAcc > 1000) { drawFps = fpsN * 1000 / fpsAcc; fpsAcc = fpsN = 0; }
+  ctx.clearRect(0, 0, W, H);
+  update(now, dt);
+  drawGarden(now); drawHands(); drawWands(now);
+  stepParticles(dt);
+  if (heartBox && hp > 0) drawHeartOutline(heartBox, Math.min(hp / CONFIG.holdMs, 1), now);
+  drawBurst(now); drawTitle(); drawMessage(now); drawDebug();
+  requestAnimationFrame(frame);
+}
+
+// =============== Camera + models ===============
+let stream = null;
+async function openCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 } }, audio: false });
+  video.srcObject = stream; await video.play(); vw = video.videoWidth; vh = video.videoHeight;
+  mirrored = facing === 'user'; video.classList.toggle('back', !mirrored);
+}
+
+async function start() {
+  const st = document.getElementById('start'); st.classList.add('hide'); setTimeout(() => st.style.display = 'none', 600);
+  try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  say('Starting camera...');
+  try { await document.fonts.load('32px Pacifico'); } catch (e) {}
+  try { await openCamera(); }
+  catch (e) { say('Camera blocked. Allow camera access and reload (needs https).'); return; }
+
+  const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/';
+  let tracker = null, fd = null;
+  try {
+    tracker = new Hands({ locateFile: f => base + 'hands@0.4.1675469240/' + f });
+    tracker.setOptions({ maxNumHands: CONFIG.maxHands, modelComplexity: CONFIG.handModel, minDetectionConfidence: 0.55, minTrackingConfidence: 0.5 });
+    tracker.onResults(r => { ingestHands(r.multiHandLandmarks || [], performance.now(), r.multiHandedness); trFrames++; });
+    fd = new FaceDetection({ locateFile: f => base + 'face_detection@0.4.1646425229/' + f });
+    fd.setOptions({ model: 'short', minDetectionConfidence: 0.5 });
+    fd.onResults(r => ingestFace(r.detections && r.detections[0], performance.now()));
+  } catch (e) { say('Could not load tracking. Check your internet and reload.'); tracker = null; }
+
+  document.getElementById('flip').classList.add('show');
+  document.getElementById('shot').classList.add('show');
+  if (tracker) say('Loading tracking...');
+  requestAnimationFrame(frame);
+  // wait for a genuinely new camera frame (saves battery, avoids processing duplicates)
+  const nextFrame = () => new Promise(res => {
+    const t = setTimeout(res, 150);
+    const done = () => { clearTimeout(t); res(); };
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(done); else requestAnimationFrame(done);
+  });
+  let n = 0, t0 = performance.now(), f0 = 0, slowN = 0, modelNow = CONFIG.handModel;
+  while (true) {
+    await nextFrame();
+    const ts = performance.now();
+    if (video.readyState >= 2 && tracker) {
+      try {
+        await tracker.send({ image: video });
+        const every = passMs < 22 ? 1 : passMs < 36 ? 2 : 3;      // face is cheap, but skip it more often on a slower phone
+        if (n++ % every === 0) await fd.send({ image: video });
+      } catch (e) {}
+    }
+    const took = performance.now() - ts; passMs += (took - passMs) * 0.2;
+    // the accurate hand model is heavier: if this device can't keep up, quietly switch to the fast one
+    if (tracker && modelNow === 1 && ++slowN > 25 && passMs > 55) { modelNow = 0; try { tracker.setOptions({ modelComplexity: 0 }); } catch (e) {} }
+    else if (passMs <= 55) slowN = Math.max(0, slowN - 1);
+    // adaptive pacing: leave the main thread at least ~half free so drawing never stutters
+    await new Promise(r => setTimeout(r, Math.max(4, clamp(passMs * 1.3, 18, 70) - took * 0)));
+    const t = performance.now();
+    if (t - t0 > 2000) { trFps = (trFrames - f0) * 1000 / (t - t0); f0 = trFrames; t0 = t; }
+  }
+}
+
+// =============== Buttons ===============
+document.getElementById('go').addEventListener('click', start);
+document.getElementById('flip').addEventListener('click', async () => {
+  facing = facing === 'user' ? 'environment' : 'user'; htracks = []; hands = []; faceTrack.init = false; head.ok = head.has = false; clearGarden();
+  try { await openCamera(); } catch (e) { facing = facing === 'user' ? 'environment' : 'user'; try { await openCamera(); } catch (e2) {} }
+});
+document.getElementById('replay').addEventListener('click', () => trigger(performance.now(), true));
+function snapshot() {
+  const c = document.createElement('canvas'); c.width = canvas.width; c.height = canvas.height;
+  const g = c.getContext('2d'); g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const sc = coverScale(), dw = vw * sc, dh = vh * sc;
+  g.save(); if (mirrored) { g.translate(W, 0); g.scale(-1, 1); }
+  g.drawImage(video, (W - dw) / 2, (H - dh) / 2, dw, dh); g.restore();
+  if (vignette) g.drawImage(vignette, 0, 0, W, H);
+  g.drawImage(canvas, 0, 0, W, H);
+  return c;
+}
+document.getElementById('shot').addEventListener('click', () => {
+  const f = document.getElementById('flash'); f.style.opacity = .8; setTimeout(() => f.style.opacity = 0, 120);
+  snapshot().toBlob(async blob => {
+    if (!blob) return;
+    const file = new File([blob], 'our-moment.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch (e) {} }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'our-moment.png'; a.click();
+  }, 'image/png');
+});
+// double-tap anywhere shows the message (handy for testing)
+let lastTap = 0;
+addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) return;
+  const t = performance.now(); if (t - lastTap < 350) trigger(t, true); lastTap = t;
+});
+</script>
+</body>
+</html>
